@@ -105,3 +105,56 @@ class KnowledgeBaseService(object):
         
         return results
 
+    def get_uploaded_files(self):
+        '''获取已上传的文件列表'''
+        try:
+            # 从Chroma数据库中获取所有文档的元数据
+            collection = self.chroma.get()
+            if not collection or 'metadatas' not in collection:
+                return []
+            
+            # 提取唯一的文件名
+            files = {}
+            for metadata in collection['metadatas']:
+                if metadata and 'source' in metadata:
+                    filename = metadata['source']
+                    if filename not in files:
+                        files[filename] = {
+                            'filename': filename,
+                            'create_time': metadata.get('create_time', '未知'),
+                            'chunks': 0
+                        }
+                    files[filename]['chunks'] += 1
+            
+            return list(files.values())
+        except Exception as e:
+            print(f"获取文件列表时出错: {e}")
+            return []
+
+    def delete_files(self, filenames):
+        '''删除指定的文件
+        filenames: 要删除的文件名列表
+        '''
+        deleted_count = 0
+        try:
+            # 获取所有文档
+            collection = self.chroma.get()
+            if not collection or 'ids' not in collection or 'metadatas' not in collection:
+                return 0
+            
+            # 找出要删除的文档ID
+            ids_to_delete = []
+            for i, metadata in enumerate(collection['metadatas']):
+                if metadata and 'source' in metadata and metadata['source'] in filenames:
+                    ids_to_delete.append(collection['ids'][i])
+            
+            # 删除文档
+            if ids_to_delete:
+                self.chroma.delete(ids=ids_to_delete)
+                deleted_count = len(ids_to_delete)
+            
+            return deleted_count
+        except Exception as e:
+            print(f"删除文件时出错: {e}")
+            return 0
+

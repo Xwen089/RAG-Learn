@@ -14,7 +14,7 @@ from knowledge_base import KnowledgeBaseService
 st.title("知识库更新服务")
 
 # 创建标签页
-tab1, tab2, tab3 = st.tabs(["单文件上传", "批量文件上传", "文件夹上传"])
+tab1, tab2, tab3, tab4 = st.tabs(["单文件上传", "批量文件上传", "文件夹上传", "文件管理"])
 
 # 单文件上传标签页
 with tab1:
@@ -40,6 +40,10 @@ with tab3:
         type=["zip"],
         accept_multiple_files=False
     )
+
+# 文件管理标签页
+with tab4:
+    st.subheader("已上传文件管理")
 
 #创建知识库服务实例对象
 if "service" not in st.session_state:
@@ -267,3 +271,44 @@ with tab3:
                 st.error("上传的文件不是有效的ZIP压缩包")
             except Exception as e:
                 st.error(f"处理ZIP文件时出错: {str(e)}")
+
+# 文件管理处理
+with tab4:
+    # 刷新按钮
+    if st.button("刷新文件列表", key="refresh_files"):
+        st.rerun()
+    
+    # 获取已上传文件列表
+    files = st.session_state["service"].get_uploaded_files()
+    
+    if not files:
+        st.info("知识库中暂无文件")
+    else:
+        st.write(f"共找到 {len(files)} 个文件")
+        
+        # 创建复选框选择文件
+        selected_files = []
+        for file_info in files:
+            col1, col2, col3 = st.columns([1, 3, 2])
+            with col1:
+                selected = st.checkbox("", key=f"select_{file_info['filename']}")
+                if selected:
+                    selected_files.append(file_info['filename'])
+            with col2:
+                st.write(f"**{file_info['filename']}**")
+            with col3:
+                st.write(f"分块数: {file_info['chunks']}")
+                st.write(f"上传时间: {file_info['create_time']}")
+            st.divider()
+        
+        # 删除选中的文件
+        if selected_files:
+            st.warning(f"已选择 {len(selected_files)} 个文件进行删除")
+            if st.button("删除选中文件", type="primary"):
+                with st.spinner("正在删除文件..."):
+                    deleted_count = st.session_state["service"].delete_files(selected_files)
+                    if deleted_count > 0:
+                        st.success(f"成功删除 {deleted_count} 个文件")
+                        st.rerun()
+                    else:
+                        st.error("删除文件失败")

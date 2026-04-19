@@ -1,3 +1,5 @@
+from langchain_core.prompts import MessagesPlaceholder
+
 md5_path = "./md5.text"
 
 embedding_model = "text-embedding-v4"
@@ -21,3 +23,14 @@ session_config = {
         "session_id":"user_001",
     }
 }
+
+# RAG提示词模板配置
+rag_prompt_template = [
+    ("system", "以我提供的已知参考资料为主体，回答用户的问题。如果用户的问题不在已知参考资料中，请直接回答“我不知道”。参考资料：{context}"),
+    ("system", "并且我提供用户的对话历史记录，如下："),
+    MessagesPlaceholder("history"),
+    ("user", "请回答用户提问:{input}"),
+]
+
+# 系统欢迎消息
+system_welcome_message = "您好！我是您的知识库助手，有什么问题我可以帮您解答吗？🤖"

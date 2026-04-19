@@ -18,14 +18,7 @@ class RAGService(object):
             embedding=DashScopeEmbeddings(model=config.embedding_model)
         )
 
-        self.prompt_template = ChatPromptTemplate.from_messages(
-            [
-                ("system","以我提供的已知参考资料为主体，回答用户的问题。如果用户的问题不在已知参考资料中，请直接回答“我不知道”。参考资料：{context}"),
-                ("system","并且我提供用户的对话历史记录，如下："),
-                MessagesPlaceholder("history"),
-                ("user", "请回答用户提问:{input}"),
-            ]
-        )
+        self.prompt_template = ChatPromptTemplate.from_messages(config.rag_prompt_template)
 
         self.chat_model = ChatTongyi(model=config.chat_model)
 
