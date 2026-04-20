@@ -18,3 +18,4 @@ __pycache__/
 chat_history/
 chroma_db/
 md5.text
+flashcards/

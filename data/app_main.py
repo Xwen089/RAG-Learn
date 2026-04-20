@@ -3,6 +3,7 @@ import sys
 import os
 import uuid
 from datetime import datetime
+from typing import List
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -242,7 +243,8 @@ def render_sidebar():
         pages = {
             "💬 知识问答": "chat",
             "📤 文件上传": "upload", 
-            "📁 文件管理": "manage"
+            "📁 文件管理": "manage",
+            "🎓 知识学习": "learning"
         }
         
         page = st.radio("选择功能", list(pages.keys()), label_visibility="collapsed")
@@ -565,6 +567,9 @@ def main():
         render_upload()
     elif page == "manage":
         render_manage()
+    elif page == "learning":
+        from app_learning import render_learning
+        render_learning()
 
 if __name__ == "__main__":
     main()

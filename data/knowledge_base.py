@@ -6,6 +6,7 @@ from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from datetime import datetime
+from typing import List
 
 def check_md5(md5_str:str):
     """检查传入的md5字符串是否已经被处理过"""
@@ -157,4 +158,38 @@ class KnowledgeBaseService(object):
         except Exception as e:
             print(f"删除文件时出错: {e}")
             return 0
+    
+    def get_document_content(self, filename: str) -> str:
+        '''获取指定文件的完整内容'''
+        try:
+            collection = self.chroma.get()
+            if not collection or 'documents' not in collection or 'metadatas' not in collection:
+                return ""
+            
+            content_parts = []
+            for i, metadata in enumerate(collection['metadatas']):
+                if metadata and 'source' in metadata and metadata['source'] == filename:
+                    if i < len(collection['documents']):
+                        content_parts.append(collection['documents'][i])
+            
+            # 按chunk_index排序
+            content_parts_sorted = sorted(
+                content_parts,
+                key=lambda x: int(collection['metadatas'][collection['documents'].index(x)].get('chunk_index', 0))
+            ) if content_parts else []
+            
+            return "\n\n".join(content_parts_sorted)
+        except Exception as e:
+            print(f"获取文档内容时出错: {e}")
+            return ""
+    
+    def get_selected_documents_content(self, filenames: List[str]) -> str:
+        '''获取多个选中文件的合并内容'''
+        all_content = []
+        for filename in filenames:
+            content = self.get_document_content(filename)
+            if content:
+                all_content.append(f"=== 文件: {filename} ===\n{content}\n")
+        
+        return "\n".join(all_content)
 
