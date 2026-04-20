@@ -1,4 +1,4 @@
-# RAG-KnowledgeBase: 智能检索增强生成知识库系统
+# RAG-Learn: 智能知识库学习系统
 
 一个基于 LangChain、Streamlit 和 ChromaDB 的检索增强生成（RAG）系统，支持文档上传、智能问答和知识学习。系统采用模块化设计，提供完整的文档处理、向量检索、对话生成和主动学习功能。
 
@@ -7,18 +7,13 @@
 - 📄 **文档上传**：支持 PDF、TXT、DOCX、EXCEL、MARKDOWN 格式
 - 🔍 **智能问答**：基于知识库的准确回答
 - 🎓 **知识学习**：AI生成闪卡，问答学习，进度跟踪
-- 💬 **对话记忆**：多轮对话历史记录
-- 🧠 **知识库管理**：自动去重、分块存储
-- 🌐 **Web界面**：Streamlit 友好界面
-- 🔧 **可配置**：多种参数和模型选择
-- 📊 **学习统计**：进度跟踪和掌握程度评估
 
 ## 📁 项目结构
 
 ```
 RAG-KnowledgeBase/
 ├── data/                          # 核心代码目录
-│   ├── app_main.py               # 统一入口（推荐）
+│   ├── app_main.py               # 统一入口
 │   ├── app_file_uploader.py      # 文档上传界面
 │   ├── app_qa.py                 # 问答界面
 │   ├── app_learning.py           # 知识学习界面
@@ -31,10 +26,7 @@ RAG-KnowledgeBase/
 ├── chroma_db/                    # ChromaDB 向量数据库
 ├── chat_history/                 # 对话历史存储
 ├── flashcards/                   # 闪卡学习数据
-├── install.bat                   # Windows 安装脚本
-├── install.sh                    # Linux/Mac 安装脚本
 ├── requirements.txt              # Python 依赖包
-├── .env.example                  # 环境变量示例
 ├── md5.text                      # 文档去重记录
 └── README.md                     # 项目文档
 ```
