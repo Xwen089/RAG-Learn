@@ -21,8 +21,13 @@ def get_mongo_uri():
 def get_client():
     uri = get_mongo_uri()
     if "localhost" in uri:
-        return MongoClient(uri)
-    return MongoClient(uri, tls=True, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=10000)
+        return MongoClient(uri, serverSelectionTimeoutMS=10000)
+    return MongoClient(
+        uri,
+        tlsInsecure=True,
+        serverSelectionTimeoutMS=15000,
+        connectTimeoutMS=15000
+    )
 
 def get_rag_db():
     return get_client()["rag_app"]
