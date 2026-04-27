@@ -8,9 +8,6 @@ from pathlib import Path
 import streamlit as st
 from knowledge_base import KnowledgeBaseService
 
-if "service" not in st.session_state:
-    st.session_state["service"] = KnowledgeBaseService("")
-
 def process_file(file, filename=None):
     if filename is None:
         filename = file.name
@@ -114,6 +111,8 @@ def process_file(file, filename=None):
 
 def upload_segments(segments, file_details, user_id=""):
     with st.spinner("正在上传文件内容到知识库中..."):
+        if "service" not in st.session_state:
+            st.session_state["service"] = KnowledgeBaseService(user_id)
         service = st.session_state["service"]
         for segment in segments:
             time.sleep(0.5)
@@ -125,6 +124,8 @@ def upload_segments(segments, file_details, user_id=""):
             st.write(f"{file_details['filename']}: {result}")
 
 def render_standalone():
+    if "service" not in st.session_state:
+        st.session_state["service"] = KnowledgeBaseService(st.session_state.get("user_id", ""))
     st.title("知识库更新服务")
 
     tab1, tab2, tab3, tab4 = st.tabs(["单文件上传", "批量文件上传", "文件夹上传", "文件管理"])
