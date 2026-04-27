@@ -8,11 +8,24 @@ from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 import config_data as config
 
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+def get_mongo_uri():
+    uri = os.environ.get("MONGO_URI")
+    if not uri:
+        import streamlit as st
+        try:
+            uri = st.secrets.get("MONGO_URI", "mongodb://localhost:27017")
+        except:
+            uri = "mongodb://localhost:27017"
+    return uri
 
-client = MongoClient(MONGO_URI)
-db_rag = client["rag_app"]
-db_vector = client["rag_vector"]
+def get_client():
+    return MongoClient(get_mongo_uri())
+
+def get_rag_db():
+    return get_client()["rag_app"]
+
+def get_vector_db():
+    return get_client()["rag_vector"]
 
 class UserService:
     @staticmethod
@@ -25,7 +38,7 @@ class UserService:
             return {"ok": False, "msg": "密码至少4个字符"}
         try:
             password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-            db_rag.users.insert_one({
+            get_rag_db().users.insert_one({
                 "_id": username,
                 "password_hash": password_hash,
                 "created_at": datetime.now().isoformat()
@@ -40,7 +53,7 @@ class UserService:
     def login(username: str, password: str) -> Dict:
         if not username or not password:
             return {"ok": False, "msg": "请输入用户名和密码"}
-        user = db_rag.users.find_one({"_id": username})
+        user = get_rag_db().users.find_one({"_id": username})
         if not user:
             return {"ok": False, "msg": "用户名不存在"}
         if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
@@ -51,7 +64,7 @@ class SessionStore:
     @staticmethod
     def get_all(user_id: str) -> Dict:
         sessions = {}
-        for doc in db_rag.sessions.find({"user_id": user_id}).sort("updated_at", -1):
+        for doc in get_rag_db().sessions.find({"user_id": user_id}).sort("updated_at", -1):
             sessions[doc["_id"]] = {
                 "id": doc["_id"],
                 "name": doc["name"],
@@ -76,28 +89,28 @@ class SessionStore:
             "last_message": "",
             "message_count": 0
         }
-        db_rag.sessions.insert_one(session)
+        get_rag_db().sessions.insert_one(session)
         session["id"] = session_id
         return session
 
     @staticmethod
     def update(session_id: str, user_id: str, updates: Dict):
         updates["updated_at"] = datetime.now().isoformat()
-        db_rag.sessions.update_one(
+        get_rag_db().sessions.update_one(
             {"_id": session_id, "user_id": user_id},
             {"$set": updates}
         )
 
     @staticmethod
     def delete(session_id: str, user_id: str) -> bool:
-        db_rag.messages.delete_many({"session_id": session_id, "user_id": user_id})
-        result = db_rag.sessions.delete_one({"_id": session_id, "user_id": user_id})
+        get_rag_db().messages.delete_many({"session_id": session_id, "user_id": user_id})
+        result = get_rag_db().sessions.delete_one({"_id": session_id, "user_id": user_id})
         return result.deleted_count > 0
 
 class MessageStore:
     @staticmethod
     def get_messages(session_id: str) -> List[Dict]:
-        msgs = list(db_rag.messages.find(
+        msgs = list(get_rag_db().messages.find(
             {"session_id": session_id},
             {"_id": 0, "role": 1, "content": 1}
         ).sort("created_at", 1))
@@ -117,11 +130,11 @@ class MessageStore:
                 "created_at": now
             })
         if docs:
-            db_rag.messages.insert_many(docs)
+            get_rag_db().messages.insert_many(docs)
 
     @staticmethod
     def clear(session_id: str):
-        db_rag.messages.delete_many({"session_id": session_id})
+        get_rag_db().messages.delete_many({"session_id": session_id})
 
 class FlashcardStore:
     @staticmethod
@@ -136,7 +149,7 @@ class FlashcardStore:
             {"$sort": {"created_at": -1}}
         ]
         sets = []
-        for doc in db_rag.flashcards.aggregate(pipeline):
+        for doc in get_rag_db().flashcards.aggregate(pipeline):
             sets.append({
                 "filename": doc["_id"],
                 "card_count": doc["card_count"],
@@ -155,18 +168,18 @@ class FlashcardStore:
             card["created_at"] = now
             docs.append(card)
         if docs:
-            db_rag.flashcards.insert_many(docs)
+            get_rag_db().flashcards.insert_many(docs)
 
     @staticmethod
     def get_cards(user_id: str, set_name: str) -> List[Dict]:
-        return list(db_rag.flashcards.find(
+        return list(get_rag_db().flashcards.find(
             {"user_id": user_id, "set_name": set_name},
             {"_id": 0}
         ))
 
     @staticmethod
     def update_progress(card_id: str, user_id: str, mastery_level: int) -> bool:
-        result = db_rag.flashcards.update_one(
+        result = get_rag_db().flashcards.update_one(
             {"_id": card_id, "user_id": user_id},
             {"$set": {
                 "mastery_level": mastery_level,
@@ -178,12 +191,12 @@ class FlashcardStore:
 
     @staticmethod
     def delete_set(user_id: str, set_name: str) -> bool:
-        result = db_rag.flashcards.delete_many({"user_id": user_id, "set_name": set_name})
+        result = get_rag_db().flashcards.delete_many({"user_id": user_id, "set_name": set_name})
         return result.deleted_count > 0
 
     @staticmethod
     def get_stats(user_id: str, set_name: str) -> Dict:
-        cards = list(db_rag.flashcards.find(
+        cards = list(get_rag_db().flashcards.find(
             {"user_id": user_id, "set_name": set_name},
             {"mastery_level": 1, "review_count": 1}
         ))
@@ -196,7 +209,7 @@ class FlashcardStore:
 class VectorStore:
     def __init__(self, user_id: str):
         self.user_id = user_id
-        self.collection = db_vector.documents
+        self.collection = get_vector_db().documents
 
     def add_texts(self, texts: List[str], metadatas: List[Dict], embeddings: List[List[float]]):
         now = datetime.now().isoformat()

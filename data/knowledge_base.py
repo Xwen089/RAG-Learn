@@ -7,12 +7,12 @@ from datetime import datetime
 from typing import List
 
 def check_md5(md5_str: str, user_id: str):
-    from mongodb_store import db_vector
-    return db_vector.md5_cache.find_one({"md5": md5_str, "user_id": user_id}) is not None
+    from mongodb_store import get_rag_db
+    return get_rag_db().md5_cache.find_one({"md5": md5_str, "user_id": user_id}) is not None
 
 def save_md5(md5_str: str, user_id: str):
-    from mongodb_store import db_vector
-    db_vector.md5_cache.insert_one({"md5": md5_str, "user_id": user_id})
+    from mongodb_store import get_rag_db
+    get_rag_db().md5_cache.insert_one({"md5": md5_str, "user_id": user_id})
 
 def get_string_md5(input_str: str, encoding='utf-8'):
     str_bytes = input_str.encode(encoding=encoding)
