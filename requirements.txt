@@ -10,3 +10,4 @@ markdown>=3.5.0
 python-dotenv>=1.0.0
 pandas>=2.0.0
 gunicorn>=20.0.0
+protobuf>=3.20.3,<5.0.0
