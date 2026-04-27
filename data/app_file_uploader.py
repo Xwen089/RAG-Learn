@@ -1,5 +1,3 @@
-#基于Streamlit完成web网页上传服务
-
 import importlib
 import io
 import time
@@ -10,20 +8,16 @@ from pathlib import Path
 import streamlit as st
 from knowledge_base import KnowledgeBaseService
 
-#添加网页标题
 st.title("知识库更新服务")
 
-# 创建标签页
 tab1, tab2, tab3, tab4 = st.tabs(["单文件上传", "批量文件上传", "文件夹上传", "文件管理"])
 
-# 单文件上传标签页
 with tab1:
     st.subheader("单文件上传")
     uploader_file = st.file_uploader(
         "选择单个文件", type=["pdf", "txt", "docx", "xlsx", "xls", "md", "markdown"]
     )
 
-# 批量文件上传标签页
 with tab2:
     st.subheader("批量文件上传")
     batch_files = st.file_uploader(
@@ -32,7 +26,6 @@ with tab2:
         accept_multiple_files=True
     )
 
-# 文件夹上传标签页
 with tab3:
     st.subheader("文件夹上传")
     folder_upload = st.file_uploader(
@@ -41,20 +34,16 @@ with tab3:
         accept_multiple_files=False
     )
 
-# 文件管理标签页
 with tab4:
     st.subheader("已上传文件管理")
 
-#创建知识库服务实例对象
 if "service" not in st.session_state:
-    st.session_state["service"] = KnowledgeBaseService()
+    st.session_state["service"] = KnowledgeBaseService("")
 
 def process_file(file, filename=None):
-    """处理单个文件并提取文本内容"""
     if filename is None:
         filename = file.name
     
-    # 获取文件大小
     if hasattr(file, 'getvalue'):
         file_size = len(file.getvalue())
     elif hasattr(file, 'read'):
@@ -65,7 +54,6 @@ def process_file(file, filename=None):
     else:
         file_size = 0
     
-    #提取文件信息
     file_details = {
         "filename": filename,
         "filetype": file.type if hasattr(file, 'type') else 'unknown',
@@ -76,13 +64,11 @@ def process_file(file, filename=None):
     st.write(f"**格式：** {file_details['filetype']}")
     st.write(f"**大小：** {file_details['filesize']} bytes")
 
-    # 按文件类型提取文本，统一组织为 segments 进行上传（每段包含 text/page）
     file_ext = file_details["filename"].lower().split(".")[-1]
     segments = []
 
     if file_ext == "pdf":
         import pdfplumber
-
         with pdfplumber.open(io.BytesIO(file.getvalue())) as pdf:
             for page_num, page in enumerate(pdf.pages, start=1):
                 page_text = page.extract_text() or ""
@@ -118,37 +104,26 @@ def process_file(file, filename=None):
             return None
 
         try:
-            # 读取Excel文件
             excel_data = pd.read_excel(io.BytesIO(file.getvalue()), sheet_name=None)
-            
-            # 处理每个工作表
             all_sheets_text = []
             for sheet_name, df in excel_data.items():
                 sheet_text = f"工作表: {sheet_name}\n"
-                
-                # 添加列名
                 columns = " | ".join(df.columns.astype(str))
                 sheet_text += f"列名: {columns}\n\n"
-                
-                # 添加数据行
                 for idx, row in df.iterrows():
                     row_values = " | ".join([str(val) for val in row.values])
                     sheet_text += f"行 {idx+1}: {row_values}\n"
-                
                 all_sheets_text.append(sheet_text)
-            
             if all_sheets_text:
                 segments = [{"text": "\n\n".join(all_sheets_text), "page": None}]
                 st.success(f"Excel 共提取到 {len(excel_data)} 个工作表的内容")
             else:
                 st.warning("Excel文件为空或无法读取")
-                
         except Exception as e:
             st.error(f"读取Excel文件时出错: {str(e)}")
             return None
 
     elif file_ext in ["md", "markdown"]:
-        # 读取Markdown文件
         md_content = file.getvalue().decode("utf-8", errors="ignore")
         if md_content.strip():
             segments = [{"text": md_content, "page": None}]
@@ -166,28 +141,26 @@ def process_file(file, filename=None):
 
     return segments, file_details
 
-def upload_segments(segments, file_details):
-    """上传提取的文本段到知识库"""
+def upload_segments(segments, file_details, user_id=""):
     with st.spinner("正在上传文件内容到知识库中..."):
+        service = st.session_state["service"]
         for segment in segments:
-            time.sleep(0.5)  # 减少等待时间
-            result = st.session_state["service"].upload_by_str(
+            time.sleep(0.5)
+            result = service.upload_by_str(
                 segment["text"],
                 file_details["filename"],
                 page=segment["page"]
             )
             st.write(f"{file_details['filename']}: {result}")
 
-# 单文件上传处理
 with tab1:
     if uploader_file is not None:
         st.divider()
         result = process_file(uploader_file)
         if result:
             segments, file_details = result
-            upload_segments(segments, file_details)
+            upload_segments(segments, file_details, st.session_state.get("user_id", ""))
 
-# 批量文件上传处理
 with tab2:
     if batch_files and len(batch_files) > 0:
         st.divider()
@@ -202,28 +175,23 @@ with tab2:
             result = process_file(file)
             if result:
                 segments, file_details = result
-                upload_segments(segments, file_details)
+                upload_segments(segments, file_details, st.session_state.get("user_id", ""))
                 success_count += 1
             else:
                 fail_count += 1
-            
             progress_bar.progress((i + 1) / len(batch_files))
         
         st.success(f"批量上传完成！成功: {success_count} 个，失败: {fail_count} 个")
 
-# 文件夹上传处理
 with tab3:
     if folder_upload is not None:
         st.divider()
         
-        # 创建临时目录
         with tempfile.TemporaryDirectory() as temp_dir:
             try:
-                # 解压ZIP文件
                 with zipfile.ZipFile(io.BytesIO(folder_upload.getvalue()), 'r') as zip_ref:
                     zip_ref.extractall(temp_dir)
                 
-                # 查找所有支持的文件
                 supported_extensions = {'.pdf', '.txt', '.docx', '.xlsx', '.xls', '.md', '.markdown'}
                 all_files = []
                 
@@ -231,7 +199,6 @@ with tab3:
                     for file in files:
                         file_path = Path(root) / file
                         if file_path.suffix.lower() in supported_extensions:
-                            # 保持相对路径结构
                             rel_path = file_path.relative_to(temp_dir)
                             all_files.append((file_path, str(rel_path)))
                 
@@ -255,7 +222,7 @@ with tab3:
                                 result = process_file(file_content, filename=rel_path)
                                 if result:
                                     segments, file_details = result
-                                    upload_segments(segments, file_details)
+                                    upload_segments(segments, file_details, st.session_state.get("user_id", ""))
                                     success_count += 1
                                 else:
                                     fail_count += 1
@@ -272,13 +239,10 @@ with tab3:
             except Exception as e:
                 st.error(f"处理ZIP文件时出错: {str(e)}")
 
-# 文件管理处理
 with tab4:
-    # 刷新按钮
     if st.button("刷新文件列表", key="refresh_files"):
         st.rerun()
     
-    # 获取已上传文件列表
     files = st.session_state["service"].get_uploaded_files()
     
     if not files:
@@ -286,7 +250,6 @@ with tab4:
     else:
         st.write(f"共找到 {len(files)} 个文件")
         
-        # 创建复选框选择文件
         selected_files = []
         for file_info in files:
             col1, col2, col3 = st.columns([1, 3, 2])
@@ -301,7 +264,6 @@ with tab4:
                 st.write(f"上传时间: {file_info['create_time']}")
             st.divider()
         
-        # 删除选中的文件
         if selected_files:
             st.warning(f"已选择 {len(selected_files)} 个文件进行删除")
             if st.button("删除选中文件", type="primary"):

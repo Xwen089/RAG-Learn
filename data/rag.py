@@ -1,10 +1,9 @@
-from streamlit import context
 from vector_stores import VectorStoreService
 from langchain_community.embeddings import DashScopeEmbeddings
 import config_data as config
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.chat_models import ChatTongyi
-from langchain_core.runnables import RunnablePassthrough,RunnableWithMessageHistory
+from langchain_core.runnables import RunnablePassthrough, RunnableWithMessageHistory
 from langchain_core.documents import Document
 from file_history_store import get_history
 from langchain_core.runnables import RunnableLambda
@@ -12,37 +11,31 @@ from langchain_core.output_parsers import StrOutputParser
 
 
 class RAGService(object):
-    def __init__(self):
-
+    def __init__(self, user_id: str = ""):
+        self.user_id = user_id
         self.vector_store = VectorStoreService(
-            embedding=DashScopeEmbeddings(model=config.embedding_model)
+            embedding=DashScopeEmbeddings(model=config.embedding_model),
+            user_id=user_id
         )
-
         self.prompt_template = ChatPromptTemplate.from_messages(config.rag_prompt_template)
-
         self.chat_model = ChatTongyi(model=config.chat_model)
-
         self.chain = self.__get_chain()
 
     def __get_chain(self):
-        """获取RAG链"""
-        retriever = self.vector_store.get_retriever()
+        retriever = self.vector_store.get_retriever(self.user_id)
 
-        def fromat_document(docs:list[Document]):
+        def fromat_document(docs: list[Document]):
             if not docs:
                 return "无相关参考资料"
-
             formatted_str = ""
             for doc in docs:
                 formatted_str += f"文档内容: {doc.page_content}\n文档元数据：{doc.metadata}\n\n"
-            
             return formatted_str
 
-        def format_for_retriever(value:dict) -> str:
+        def format_for_retriever(value: dict) -> str:
             return value["input"]
         
         def format_for_prompt(value):
-            #{input,context,history}
             new_value = {}
             new_value["input"] = value["input"]["input"]
             new_value["context"] = value["context"]
@@ -52,8 +45,8 @@ class RAGService(object):
         chain = (
             {
                 "input": RunnablePassthrough(),
-                "context":RunnableLambda(format_for_retriever) | retriever | fromat_document
-            }| RunnableLambda(format_for_prompt) | self.prompt_template | self.chat_model | StrOutputParser()
+                "context": RunnableLambda(format_for_retriever) | retriever | fromat_document
+            } | RunnableLambda(format_for_prompt) | self.prompt_template | self.chat_model | StrOutputParser()
         )
 
         conversational_chain = RunnableWithMessageHistory(
@@ -64,8 +57,3 @@ class RAGService(object):
         )
 
         return conversational_chain
-
-if __name__ == "__main__":
-    session_config = config.session_config
-    result = RAGService().chain.invoke({"input":"什么是深度学习？"},session_config)
-    print(result)

@@ -10,13 +10,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from app_file_uploader import process_file, upload_segments
 from knowledge_base import KnowledgeBaseService
 from rag import RAGService
-from file_history_store import SessionManager
+from mongodb_store import UserService, SessionStore, MessageStore
 import config_data as config
 
-# 页面配置
 st.set_page_config(page_title="RAG知识库系统", page_icon="📚", layout="wide")
 
-# CSS样式
 st.markdown("""
 <style>
     .main-header { font-size: 2.5rem; font-weight: 700; color: #1E3A8A; text-align: center; margin-bottom: 1rem; }
@@ -64,180 +62,140 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 初始化会话管理器
-if "session_manager" not in st.session_state:
-    st.session_state.session_manager = SessionManager()
+def render_login():
+    st.markdown('<h1 class="main-header">📚 RAG知识库系统</h1>', unsafe_allow_html=True)
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("### 🔐 用户登录")
+        tab_login, tab_register = st.tabs(["登录", "注册"])
+        
+        with tab_login:
+            username = st.text_input("用户名", key="login_user")
+            password = st.text_input("密码", type="password", key="login_pwd")
+            if st.button("登录", type="primary", use_container_width=True):
+                result = UserService.login(username, password)
+                if result["ok"]:
+                    st.session_state["user_id"] = result["user_id"]
+                    st.session_state["user_logged_in"] = True
+                    st.rerun()
+                else:
+                    st.error(result["msg"])
+        
+        with tab_register:
+            new_user = st.text_input("用户名", key="reg_user")
+            new_pwd = st.text_input("密码", type="password", key="reg_pwd")
+            if st.button("注册", type="primary", use_container_width=True):
+                result = UserService.register(new_user, new_pwd)
+                if result["ok"]:
+                    st.success(result["msg"])
+                else:
+                    st.error(result["msg"])
 
-# 初始化
 def init_session():
-    if "service" not in st.session_state:
-        st.session_state.service = KnowledgeBaseService()
-    if "rag" not in st.session_state:
-        st.session_state.rag = RAGService()
+    user_id = st.session_state["user_id"]
     
-    # 会话管理初始化 - 从文件加载
+    if "service" not in st.session_state:
+        st.session_state.service = KnowledgeBaseService(user_id)
+    if "rag" not in st.session_state:
+        st.session_state.rag = RAGService(user_id)
+    
     if "sessions" not in st.session_state:
-        st.session_state.sessions = st.session_state.session_manager.get_all_sessions()
+        st.session_state.sessions = SessionStore.get_all(user_id)
     
     if "current_session_id" not in st.session_state or st.session_state.current_session_id not in st.session_state.sessions:
         if st.session_state.sessions:
-            # 使用最新的会话作为当前会话
             latest_session = max(
                 st.session_state.sessions.values(), 
                 key=lambda x: x.get("updated_at", x.get("created_at", ""))
             )
             st.session_state.current_session_id = latest_session["id"]
         else:
-            # 创建默认会话
-            session_data = st.session_state.session_manager.create_session("新会话 1")
+            session_data = SessionStore.create(user_id, "新会话 1")
             st.session_state.sessions[session_data["id"]] = session_data
             st.session_state.current_session_id = session_data["id"]
-            st.session_state.session_manager.save_sessions(st.session_state.sessions)
     
-    # 初始化当前会话的消息（从文件加载）
     session_key = f"messages_{st.session_state.current_session_id}"
     if session_key not in st.session_state:
-        # 尝试从文件加载历史消息
-        from file_history_store import get_history
-        try:
-            history = get_history(st.session_state.current_session_id)
-            messages = []
-            for msg in history.messages:
-                # 将BaseMessage转换为字典格式
-                msg_dict = msg.dict()
-                if "content" in msg_dict:
-                    messages.append({
-                        "role": "assistant" if msg_dict.get("type") == "ai" else "user",
-                        "content": msg_dict["content"]
-                    })
-            
-            if messages:
-                st.session_state[session_key] = messages
-            else:
-                st.session_state[session_key] = [{"role": "assistant", "content": config.system_welcome_message}]
-        except:
+        messages = MessageStore.get_messages(st.session_state.current_session_id)
+        if messages:
+            st.session_state[session_key] = messages
+        else:
             st.session_state[session_key] = [{"role": "assistant", "content": config.system_welcome_message}]
 
-# 会话管理函数
 def create_new_session():
-    """创建新会话"""
+    user_id = st.session_state["user_id"]
     session_num = len(st.session_state.sessions) + 1
-    session_data = st.session_state.session_manager.create_session(f"新会话 {session_num}")
-    
+    session_data = SessionStore.create(user_id, f"新会话 {session_num}")
     session_id = session_data["id"]
     st.session_state.sessions[session_id] = session_data
     st.session_state.current_session_id = session_id
-    
-    # 保存到文件
-    st.session_state.session_manager.save_sessions(st.session_state.sessions)
-    
-    # 初始化新会话的消息
     session_key = f"messages_{session_id}"
     st.session_state[session_key] = [{"role": "assistant", "content": config.system_welcome_message}]
 
 def switch_session(session_id):
-    """切换会话"""
     st.session_state.current_session_id = session_id
-    
-    # 加载新会话的消息
     session_key = f"messages_{session_id}"
     if session_key not in st.session_state:
-        # 尝试从文件加载历史消息
-        from file_history_store import get_history
-        try:
-            history = get_history(session_id)
-            messages = []
-            for msg in history.messages:
-                msg_dict = msg.dict()
-                if "content" in msg_dict:
-                    messages.append({
-                        "role": "assistant" if msg_dict.get("type") == "ai" else "user",
-                        "content": msg_dict["content"]
-                    })
-            
-            if messages:
-                st.session_state[session_key] = messages
-            else:
-                st.session_state[session_key] = [{"role": "assistant", "content": config.system_welcome_message}]
-        except:
+        messages = MessageStore.get_messages(session_id)
+        if messages:
+            st.session_state[session_key] = messages
+        else:
             st.session_state[session_key] = [{"role": "assistant", "content": config.system_welcome_message}]
 
 def rename_session(session_id, new_name):
-    """重命名会话"""
     if session_id in st.session_state.sessions:
         st.session_state.sessions[session_id]["name"] = new_name
-        # 更新到文件
-        st.session_state.session_manager.update_session(
-            session_id, 
-            {"name": new_name}, 
-            st.session_state.sessions
-        )
+        SessionStore.update(session_id, st.session_state["user_id"], {"name": new_name})
 
 def delete_session(session_id):
-    """删除会话"""
+    user_id = st.session_state["user_id"]
     if session_id in st.session_state.sessions:
-        # 如果删除的是当前会话，切换到其他会话
         if session_id == st.session_state.current_session_id:
             other_sessions = [sid for sid in st.session_state.sessions.keys() if sid != session_id]
             if other_sessions:
                 st.session_state.current_session_id = other_sessions[0]
             else:
-                # 如果没有其他会话，创建一个新的
                 create_new_session()
         
-        # 通过会话管理器删除（会同时删除元数据和历史文件）
-        success = st.session_state.session_manager.delete_session(session_id, st.session_state.sessions)
-        
+        success = SessionStore.delete(session_id, user_id)
         if success:
-            # 删除内存中的会话数据
             del st.session_state.sessions[session_id]
-            
-            # 删除内存中的会话消息
             session_key = f"messages_{session_id}"
             if session_key in st.session_state:
                 del st.session_state[session_key]
-        
         return success
     return False
 
 def get_current_messages():
-    """获取当前会话的消息"""
     session_key = f"messages_{st.session_state.current_session_id}"
     return st.session_state.get(session_key, [])
 
 def update_current_messages(messages):
-    """更新当前会话的消息"""
     session_key = f"messages_{st.session_state.current_session_id}"
     st.session_state[session_key] = messages
     
-    # 更新会话信息
     if messages and len(messages) > 1:
         last_msg = messages[-1]
-        if last_msg["role"] == "user":
-            preview = last_msg["content"][:50] + ("..." if len(last_msg["content"]) > 50 else "")
-        else:
-            preview = last_msg["content"][:50] + ("..." if len(last_msg["content"]) > 50 else "")
+        preview = last_msg["content"][:50] + ("..." if len(last_msg["content"]) > 50 else "")
         
         updates = {
             "last_message": preview,
-            "message_count": len(messages) - 1  # 减去系统欢迎消息
+            "message_count": len(messages) - 1
         }
         
         st.session_state.sessions[st.session_state.current_session_id].update(updates)
-        
-        # 更新到文件
-        st.session_state.session_manager.update_session(
+        SessionStore.update(
             st.session_state.current_session_id,
-            updates,
-            st.session_state.sessions
+            st.session_state["user_id"],
+            updates
         )
 
-# 侧边栏
 def render_sidebar():
     with st.sidebar:
-        # 顶部功能导航
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### 📚 RAG知识库系统")
+        st.markdown(f"**👤 用户:** {st.session_state['user_id']}")
         st.markdown("---")
         
         pages = {
@@ -254,25 +212,25 @@ def render_sidebar():
         st.info(f"📄 已上传文件: **{len(files)}** 个")
         st.markdown("</div>", unsafe_allow_html=True)
         
-        # 会话列表区域
+        if st.button("🚪 退出登录", use_container_width=True):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+        
         st.markdown("---")
         st.markdown("### 💭 会话列表")
         
-        # 新建会话按钮
         if st.button("➕ 新建会话", use_container_width=True):
             create_new_session()
             st.rerun()
         
         st.markdown("---")
         
-        # 会话搜索框
         search_term = st.text_input("🔍 搜索会话", placeholder="输入会话名称搜索...", key="session_search")
         
-        # 显示会话列表
         sessions = st.session_state.sessions
         current_id = st.session_state.current_session_id
         
-        # 过滤会话
         filtered_sessions = {}
         for session_id, session_info in sessions.items():
             if not search_term or search_term.lower() in session_info["name"].lower():
@@ -283,13 +241,11 @@ def render_sidebar():
         else:
             for session_id, session_info in filtered_sessions.items():
                 is_active = session_id == current_id
-                session_class = "session-card active" if is_active else "session-card"
                 
                 with st.container():
                     col1, col2, col3 = st.columns([4, 1, 1])
                     
                     with col1:
-                        # 会话名称编辑
                         if st.session_state.get(f"editing_{session_id}", False):
                             new_name = st.text_input(
                                 "新名称",
@@ -327,7 +283,6 @@ def render_sidebar():
                             st.rerun()
                     
                     with col3:
-                        # 更多操作菜单
                         with st.popover("⋯", help="更多操作"):
                             if st.button("✏️ 重命名", key=f"rename_btn_{session_id}"):
                                 st.session_state[f"editing_{session_id}"] = True
@@ -337,7 +292,6 @@ def render_sidebar():
                                 st.session_state[f"confirm_delete_{session_id}"] = True
                                 st.rerun()
                 
-                # 删除确认对话框
                 if st.session_state.get(f"confirm_delete_{session_id}", False):
                     st.warning(f"确定要删除会话 '{session_info['name']}' 吗？")
                     col_confirm1, col_confirm2 = st.columns(2)
@@ -354,35 +308,30 @@ def render_sidebar():
     
     return pages[page]
 
-# 聊天页面
 def render_chat():
-    # 显示当前会话名称
     current_session = st.session_state.sessions[st.session_state.current_session_id]
     col1, col2, col3 = st.columns([2, 3, 2])
     with col2:
         st.markdown(f'<h1 class="main-header">💬 {current_session["name"]}</h1>', unsafe_allow_html=True)
     
-    # 获取当前会话的消息
     messages = get_current_messages()
     
-    # 显示聊天消息
     for msg in messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
     
-    # 用户输入
     if prompt := st.chat_input("请输入您的问题..."):
-        # 添加用户消息
         with st.chat_message("user"):
             st.markdown(prompt)
         
         messages.append({"role": "user", "content": prompt})
         
-        # AI回复
+        user_message = {"role": "user", "content": prompt}
+        MessageStore.add_messages(st.session_state.current_session_id, st.session_state["user_id"], [user_message])
+        
         with st.chat_message("assistant"):
             with st.spinner("🤔 正在思考..."):
                 ai_res = []
-                # 使用当前会话ID作为session_id
                 stream = st.session_state.rag.chain.stream(
                     {"input": prompt}, 
                     {"configurable": {"session_id": st.session_state.current_session_id}}
@@ -394,27 +343,28 @@ def render_chat():
                         yield chunk
                 
                 st.write_stream(capture(stream, ai_res))
-                messages.append({"role": "assistant", "content": "".join(ai_res)})
+                full_response = "".join(ai_res)
+                messages.append({"role": "assistant", "content": full_response})
+                
+                assistant_message = {"role": "assistant", "content": full_response}
+                MessageStore.add_messages(st.session_state.current_session_id, st.session_state["user_id"], [assistant_message])
         
-        # 更新消息和会话信息
         update_current_messages(messages)
     
-    # 清空当前会话按钮
     if len(messages) > 1:
         col1, col2, col3 = st.columns([2, 1, 2])
         with col2:
             if st.button("🗑️ 清空当前会话", type="secondary"):
                 session_key = f"messages_{st.session_state.current_session_id}"
+                MessageStore.clear(st.session_state.current_session_id)
                 st.session_state[session_key] = [{"role": "assistant", "content": config.system_welcome_message}]
                 
-                # 更新会话信息
                 st.session_state.sessions[st.session_state.current_session_id].update({
                     "last_message": "",
                     "message_count": 0
                 })
                 st.rerun()
 
-# 文件上传页面
 def render_upload():
     st.markdown('<h1 class="main-header">📤 文件上传中心</h1>', unsafe_allow_html=True)
     
@@ -426,7 +376,7 @@ def render_upload():
             with st.spinner("🔍 正在分析文件..."):
                 if result := process_file(file):
                     segments, file_details = result
-                    upload_segments(segments, file_details)
+                    upload_segments(segments, file_details, st.session_state["user_id"])
     
     with tab2:
         st.markdown("### 📦 批量文件上传")
@@ -439,7 +389,7 @@ def render_upload():
                 with st.expander(f"📄 {file.name}", expanded=False):
                     if result := process_file(file):
                         segments, file_details = result
-                        upload_segments(segments, file_details)
+                        upload_segments(segments, file_details, st.session_state["user_id"])
                         success += 1
                 progress.progress((i + 1) / len(files))
             
@@ -477,7 +427,7 @@ def render_upload():
                                         file_content.name = rel_path
                                         if result := process_file(file_content, filename=rel_path):
                                             segments, file_details = result
-                                            upload_segments(segments, file_details)
+                                            upload_segments(segments, file_details, st.session_state["user_id"])
                                             success += 1
                                 except Exception as e:
                                     st.error(f"❌ 处理文件出错: {str(e)}")
@@ -491,7 +441,6 @@ def render_upload():
                 except Exception as e:
                     st.error(f"❌ 处理ZIP文件时出错: {str(e)}")
 
-# 文件管理页面
 def render_manage():
     st.markdown('<h1 class="main-header">📁 文件管理中心</h1>', unsafe_allow_html=True)
     
@@ -556,8 +505,11 @@ def render_manage():
                     else:
                         st.error("❌ 删除文件失败")
 
-# 主程序
 def main():
+    if "user_logged_in" not in st.session_state:
+        render_login()
+        return
+    
     init_session()
     page = render_sidebar()
     
