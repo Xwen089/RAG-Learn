@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from app_file_uploader import process_file, upload_segments
 from knowledge_base import KnowledgeBaseService
 from rag import RAGService
-from mongodb_store import UserService, SessionStore, MessageStore
+from supabase_store import UserService, SessionStore, MessageStore, init_db
 import config_data as config
 
 st.set_page_config(page_title="RAG知识库系统", page_icon="📚", layout="wide")
@@ -506,6 +506,7 @@ def render_manage():
                         st.error("❌ 删除文件失败")
 
 def main():
+    init_db()
     if "user_logged_in" not in st.session_state:
         render_login()
         return

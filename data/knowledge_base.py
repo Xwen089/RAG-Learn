@@ -7,12 +7,12 @@ from datetime import datetime
 from typing import List
 
 def check_md5(md5_str: str, user_id: str):
-    from mongodb_store import get_rag_db
-    return get_rag_db().md5_cache.find_one({"md5": md5_str, "user_id": user_id}) is not None
+    from supabase_store import check_md5 as _check
+    return _check(md5_str, user_id)
 
 def save_md5(md5_str: str, user_id: str):
-    from mongodb_store import get_rag_db
-    get_rag_db().md5_cache.insert_one({"md5": md5_str, "user_id": user_id})
+    from supabase_store import save_md5 as _save
+    _save(md5_str, user_id)
 
 def get_string_md5(input_str: str, encoding='utf-8'):
     str_bytes = input_str.encode(encoding=encoding)
@@ -32,7 +32,7 @@ class KnowledgeBaseService(object):
         )
 
     def upload_by_str(self, data, filename, page=None):
-        from mongodb_store import VectorStore
+        from supabase_store import VectorStore
         md5_hex = get_string_md5(data)
         if check_md5(md5_hex, self.user_id):
             return "[跳过] 内容已存在于知识库中"
@@ -79,21 +79,21 @@ class KnowledgeBaseService(object):
         return results
 
     def get_uploaded_files(self):
-        from mongodb_store import VectorStore
+        from supabase_store import VectorStore
         vs = VectorStore(self.user_id)
         return vs.get_files()
 
     def delete_files(self, filenames):
-        from mongodb_store import VectorStore
+        from supabase_store import VectorStore
         vs = VectorStore(self.user_id)
         return vs.delete_files(filenames)
     
     def get_document_content(self, filename: str) -> str:
-        from mongodb_store import VectorStore
+        from supabase_store import VectorStore
         vs = VectorStore(self.user_id)
         return vs.get_document_content(filename)
     
     def get_selected_documents_content(self, filenames: List[str]) -> str:
-        from mongodb_store import VectorStore
+        from supabase_store import VectorStore
         vs = VectorStore(self.user_id)
         return vs.get_selected_content(filenames)
